@@ -127,22 +127,25 @@ def process_and_display(prompt_input):
         message_placeholder = st.empty()
         with st.spinner("🧠 Thinking & Plotting..."):
             try:
-                # Build context from recent messages for vague requests like "plot this"
-                enhanced_input = prompt_input
-                if any(keyword in prompt_input.lower() for keyword in ["plot this", "graph this", "draw this", "show this"]):
-                    # Include last 2-3 messages for context
-                    context_parts = []
-                    for msg in st.session_state.messages[-4:-1]:  # Last 3 messages (excluding current)
-                        if msg["role"] == "user":
-                            context_parts.append(f"Previous question: {msg['content']}")
-                        elif msg["role"] == "assistant" and "content" in msg:
-                            # Extract just the math content, not the full response
-                            content = msg["content"][:200]  # First 200 chars
-                            context_parts.append(f"Previous answer: {content}")
-                    if context_parts:
-                        enhanced_input = f"{' '.join(context_parts)}\n\nCurrent request: {prompt_input}"
+                # Pass conversation history to agent for memory
+                # Get all previous messages (excluding the current one we just added)
+                conversation_history = st.session_state.messages[:-1]  # All messages except the current user message
                 
-                response_data = st.session_state.agent.invoke({"input": enhanced_input})
+                # Check if this is a follow-up question (explain, previous, etc.)
+                is_followup = any(keyword in prompt_input.lower() for keyword in [
+                    "explain", "previous", "above", "earlier", "before", 
+                    "that solution", "the solution", "the answer", "that problem"
+                ])
+                
+                # For follow-up questions, include more context
+                if is_followup and len(conversation_history) > 0:
+                    # Include more messages for context
+                    conversation_history = st.session_state.messages[-8:-1]  # Last 7 messages
+                
+                response_data = st.session_state.agent.invoke({
+                    "input": prompt_input,
+                    "conversation_history": conversation_history
+                })
                 final_answer = response_data['output']
                 # Note: create_python_agent may not return intermediate_steps
                 steps = response_data.get('intermediate_steps', [])

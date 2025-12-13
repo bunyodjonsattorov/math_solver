@@ -3,7 +3,7 @@ import streamlit as st
 from langchain_openai import ChatOpenAI
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_experimental.tools import PythonREPLTool
-from langchain_core.messages import ToolMessage, HumanMessage
+from langchain_core.messages import ToolMessage, HumanMessage, AIMessage, HumanMessage
 
 # This version uses LLM with tools bound directly - no agent creation functions needed
 # This is the most compatible approach that works with any LangChain version
@@ -45,7 +45,9 @@ def get_math_agent():
          "Your goal is to solve the user's problem using Python code. "
          "\n\n"
          "### CRITICAL INSTRUCTIONS:\n"
-         "- You MUST use the Python REPL tool to solve EVERY problem. Do not try to solve it without running code.\n"
+         "- You have access to conversation history. If the user asks about a 'previous question', 'previous solution', or refers to something from earlier, use the conversation history to understand the context.\n"
+         "- For NEW problems: You MUST use the Python REPL tool to solve EVERY problem. Do not try to solve it without running code.\n"
+         "- For EXPLANATION requests: If the user asks to 'explain the solution' or 'explain the previous answer', provide a detailed step-by-step explanation of how the problem was solved, including the mathematical concepts involved.\n"
          "- Write Python code using sympy, numpy, or matplotlib as needed.\n"
          "- The LAST line of your code MUST be print() with the final answer. Example: print(final_answer)\n"
          "- NEVER just write a variable name like 'final_curve'. You MUST use print(final_curve) to see the output.\n"
@@ -60,7 +62,26 @@ def get_math_agent():
     
     def agent_chain(input_dict):
         """Agent chain that handles tool calling manually."""
-        messages = list(prompt.invoke(input_dict).to_messages())
+        # Get conversation history if provided
+        conversation_history = input_dict.get('conversation_history', [])
+        
+        # Build messages with conversation history
+        system_and_input = list(prompt.invoke({"input": input_dict.get('input', '')}).to_messages())
+        messages = []
+        
+        # Add system message
+        messages.append(system_and_input[0])
+        
+        # Add conversation history (last 6 messages to keep context manageable)
+        for msg in conversation_history[-6:]:
+            if msg.get("role") == "user":
+                messages.append(HumanMessage(content=msg.get("content", "")))
+            elif msg.get("role") == "assistant":
+                messages.append(AIMessage(content=msg.get("content", "")))
+        
+        # Add current input
+        messages.append(system_and_input[1])
+        
         max_iterations = 10
         intermediate_steps = []
         previous_codes = []  # Track previous code to detect loops
