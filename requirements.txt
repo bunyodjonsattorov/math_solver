@@ -1,8 +1,9 @@
 streamlit
-langchain==0.1.0
+langchain
+langchain-community
+langchain-core
 langchain-openai
 langchain-experimental
-langchain-community
 matplotlib
 sympy
 pillow
