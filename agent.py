@@ -41,8 +41,8 @@ CRITICAL RULES:
 2. The LAST line of your code MUST be print() with the final answer. Do NOT just write a variable name - you MUST use print().
 3. After you see the print() output, STOP. Do NOT run the same code again. The print() output IS your final answer.
 4. For integration problems: integrate, substitute any given points to solve for constants (like C), substitute back, then PRINT the final expression using print().
-5. For graphing: use matplotlib, save to 'graph.png', then print("Graph saved to graph.png").
-6. If you cannot write code to solve it, return "I don't know" - do NOT guess.
+5. For graphing/plotting requests: ALWAYS use matplotlib to create plots. Save to 'graph.png' using plt.savefig('graph.png'), then print("Graph saved to graph.png"). If the user asks to "plot this graph" or "graph this", look at the conversation history for the function/equation to plot, or ask what to plot if unclear.
+6. If you truly cannot write code to solve it (and it's not a plotting request), return "I don't know" - do NOT guess.
 
 CORRECT Example for integration:
 ```python
@@ -55,12 +55,29 @@ y_final = y.subs(C, C_value)
 print(y_final)  # THIS IS REQUIRED - last line must be print()
 ```
 
+CORRECT Example for graphing:
+```python
+import matplotlib.pyplot as plt
+import numpy as np
+x = np.linspace(-10, 10, 1000)
+y = x**2  # or whatever function was mentioned
+plt.figure(figsize=(8, 6))
+plt.plot(x, y)
+plt.xlabel('x')
+plt.ylabel('y')
+plt.title('Graph')
+plt.grid(True)
+plt.savefig('graph.png')
+plt.close()
+print("Graph saved to graph.png")  # THIS IS REQUIRED - last line must be print()
+```
+
 WRONG - Do NOT do this:
 ```python
 y_final  # This will NOT work - you must use print()
 ```
 
-Remember: The last line MUST be print(). After you see the output, STOP. Do NOT repeat the same code."""
+Remember: The last line MUST be print(). After you see the output, STOP. Do NOT repeat the same code. For plotting, always save to 'graph.png' and print confirmation."""
     
     # Create Python agent with strict prompt
     tool = PythonREPLTool()
