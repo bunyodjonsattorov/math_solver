@@ -23,19 +23,50 @@ def analyze_image(uploaded_file):
     if not OPENAI_API_KEY:
         st.error("API Key missing.")
         return None
+    
+    try:
+        bytes_data = uploaded_file.getvalue()
+        base64_image = base64.b64encode(bytes_data).decode('utf-8')
         
-    bytes_data = uploaded_file.getvalue()
-    base64_image = base64.b64encode(bytes_data).decode('utf-8')
-    
-    vision_llm = ChatOpenAI(model="gpt-4o", openai_api_key=OPENAI_API_KEY, max_tokens=500)
-    
-    msg = HumanMessage(
-        content=[
-            {"type": "text", "text": "Transcribe this math problem EXACTLY. Do not solve it."},
-            {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{base64_image}"}}
-        ]
-    )
-    return vision_llm.invoke([msg]).content
+        # Detect image format from file extension
+        file_extension = uploaded_file.name.split('.')[-1].lower() if uploaded_file.name else 'png'
+        mime_type_map = {
+            'jpg': 'image/jpeg',
+            'jpeg': 'image/jpeg',
+            'png': 'image/png',
+            'gif': 'image/gif',
+            'webp': 'image/webp'
+        }
+        mime_type = mime_type_map.get(file_extension, 'image/png')
+        
+        vision_llm = ChatOpenAI(
+            model="gpt-4o", 
+            openai_api_key=OPENAI_API_KEY, 
+            max_tokens=1000,
+            temperature=0
+        )
+        
+        msg = HumanMessage(
+            content=[
+                {
+                    "type": "text", 
+                    "text": "You are a math problem transcription assistant. Transcribe this math problem EXACTLY as it appears in the image. Include all equations, numbers, and text. Do not solve the problem, only transcribe it. If the image is unclear or not a math problem, say so."
+                },
+                {
+                    "type": "image_url", 
+                    "image_url": {
+                        "url": f"data:{mime_type};base64,{base64_image}"
+                    }
+                }
+            ]
+        )
+        
+        response = vision_llm.invoke([msg])
+        return response.content if hasattr(response, 'content') else str(response)
+        
+    except Exception as e:
+        st.error(f"Error analyzing image: {str(e)}")
+        return None
 
 def process_and_display(prompt_input):
     """Runs the agent and updates UI."""
