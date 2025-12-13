@@ -26,23 +26,49 @@ def analyze_image(uploaded_file):
     
     try:
         bytes_data = uploaded_file.getvalue()
-        base64_image = base64.b64encode(bytes_data).decode('utf-8')
         
-        # Detect image format from file extension
-        file_extension = uploaded_file.name.split('.')[-1].lower() if uploaded_file.name else 'png'
-        mime_type_map = {
-            'jpg': 'image/jpeg',
-            'jpeg': 'image/jpeg',
-            'png': 'image/png',
-            'gif': 'image/gif',
-            'webp': 'image/webp'
-        }
-        mime_type = mime_type_map.get(file_extension, 'image/png')
+        # Validate image size (OpenAI has limits)
+        max_size = 20 * 1024 * 1024  # 20MB
+        if len(bytes_data) > max_size:
+            st.error(f"Image too large ({len(bytes_data) / 1024 / 1024:.1f}MB). Maximum size is 20MB.")
+            return None
+        
+        # Try to validate it's actually an image using PIL
+        try:
+            from PIL import Image
+            import io
+            img = Image.open(io.BytesIO(bytes_data))
+            # Convert to RGB if necessary (for formats like RGBA)
+            if img.mode in ('RGBA', 'LA', 'P'):
+                rgb_img = Image.new('RGB', img.size, (255, 255, 255))
+                if img.mode == 'P':
+                    img = img.convert('RGBA')
+                rgb_img.paste(img, mask=img.split()[-1] if img.mode == 'RGBA' else None)
+                img = rgb_img
+            
+            # Save to bytes in JPEG format for better compatibility
+            output = io.BytesIO()
+            img.save(output, format='JPEG', quality=95)
+            bytes_data = output.getvalue()
+            mime_type = 'image/jpeg'
+        except Exception as pil_error:
+            # If PIL fails, use original format
+            file_extension = uploaded_file.name.split('.')[-1].lower() if uploaded_file.name else 'png'
+            mime_type_map = {
+                'jpg': 'image/jpeg',
+                'jpeg': 'image/jpeg',
+                'png': 'image/png',
+                'gif': 'image/gif',
+                'webp': 'image/webp'
+            }
+            mime_type = mime_type_map.get(file_extension, 'image/png')
+        
+        base64_image = base64.b64encode(bytes_data).decode('utf-8')
         
         vision_llm = ChatOpenAI(
             model="gpt-4o", 
             openai_api_key=OPENAI_API_KEY, 
-            max_tokens=1000,
+            max_tokens=1500,
             temperature=0
         )
         
@@ -50,23 +76,44 @@ def analyze_image(uploaded_file):
             content=[
                 {
                     "type": "text", 
-                    "text": "You are a math problem transcription assistant. Transcribe this math problem EXACTLY as it appears in the image. Include all equations, numbers, and text. Do not solve the problem, only transcribe it. If the image is unclear or not a math problem, say so."
+                    "text": (
+                        "You are a math problem transcription assistant. "
+                        "Look at the image carefully and transcribe the math problem EXACTLY as it appears. "
+                        "Include:\n"
+                        "- All mathematical expressions and equations\n"
+                        "- All numbers, variables, and symbols\n"
+                        "- Any text instructions or questions\n"
+                        "- Formatting like fractions, exponents, etc.\n\n"
+                        "Do NOT solve the problem. Only transcribe what you see in the image. "
+                        "If the image contains a math problem, transcribe it completely. "
+                        "If the image is unclear, blurry, or not a math problem, describe what you can see."
+                    )
                 },
                 {
                     "type": "image_url", 
                     "image_url": {
-                        "url": f"data:{mime_type};base64,{base64_image}"
+                        "url": f"data:{mime_type};base64,{base64_image}",
+                        "detail": "high"  # Request high detail for better OCR
                     }
                 }
             ]
         )
         
         response = vision_llm.invoke([msg])
-        return response.content if hasattr(response, 'content') else str(response)
+        result = response.content if hasattr(response, 'content') else str(response)
+        
+        # Validate the response
+        if not result or result.strip() == "":
+            return "I received the image but couldn't extract any text. Please try uploading a clearer image or type the problem manually."
+        
+        return result
         
     except Exception as e:
+        import traceback
+        error_details = traceback.format_exc()
         st.error(f"Error analyzing image: {str(e)}")
-        return None
+        # Return a helpful message instead of None
+        return f"Error processing image: {str(e)}. Please try typing the problem manually or upload a different image."
 
 def process_and_display(prompt_input):
     """Runs the agent and updates UI."""
