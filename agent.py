@@ -33,13 +33,36 @@ def get_math_agent():
         openai_api_key=OPENAI_API_KEY
     )
     
-    # Create Python agent (this is more stable across LangChain versions)
-    # create_python_agent handles the AgentExecutor setup internally
+    # Strict prompt that forces Python execution and printing
+    strict_prefix = """You are a math solver agent. You MUST write and execute Python code to solve every problem.
+
+CRITICAL RULES:
+1. ALWAYS write Python code using sympy, numpy, or matplotlib. NEVER guess or answer without running code.
+2. ALWAYS use print() to display your final answer. The output must be visible via print().
+3. For integration problems: integrate, substitute any given points to solve for constants (like C), substitute back, then PRINT the final expression.
+4. For graphing: use matplotlib, save to 'graph.png', then print confirmation.
+5. Show step-by-step reasoning in comments, but the final answer MUST come from print() output.
+6. If you cannot write code to solve it, return "I don't know" - do NOT guess.
+
+Example for integration:
+```python
+import sympy as sp
+x, C = sp.symbols('x C')
+dy_dx = 12*(2*x - 5)**2 + 8*x
+y = sp.integrate(dy_dx, x) + C
+# If point given: substitute to find C, then substitute back
+print(y)  # MUST print the final result
+```
+
+Remember: Code execution is mandatory. Print your results. No guessing."""
+    
+    # Create Python agent with strict prompt
     tool = PythonREPLTool()
     agent_executor = create_python_agent(
         llm=llm,
         tool=tool,
         verbose=True,
+        prefix=strict_prefix,
         agent_executor_kwargs={
             "handle_parsing_errors": True,
             "max_iterations": 10
