@@ -9,7 +9,7 @@
 [![Streamlit](https://img.shields.io/badge/Streamlit-Cloud-red.svg)](https://streamlit.io/)
 [![OpenAI](https://img.shields.io/badge/OpenAI-GPT--4o-orange.svg)](https://openai.com/)
 
-[Live Demo](#) • [Documentation](#features) • [Report Bug](#)
+[Live Demo](https://cambridge-math-ai.streamlit.app/) • [Documentation](#features) • [Report Bug](#)
 
 </div>
 
