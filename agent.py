@@ -86,6 +86,10 @@ def get_math_agent():
                     "intermediate_steps": intermediate_steps
                 }
             
+            # CRITICAL: Add the AI response (with tool_calls) to messages FIRST
+            # OpenAI requires AIMessage with tool_calls to come before ToolMessages
+            messages.append(response)
+            
             # Execute tool calls
             for tool_call in tool_calls:
                 # Handle different tool_call formats
@@ -122,6 +126,7 @@ def get_math_agent():
                             content=str(result),
                             tool_call_id=tool_call_id
                         )
+                        # Add ToolMessage AFTER the AIMessage
                         messages.append(tool_message)
                         
                         # Store intermediate step for debugging
@@ -143,9 +148,6 @@ def get_math_agent():
                             type('Action', (), {'tool_input': code_input})(),
                             error_str
                         ))
-            
-            # Add the AI response to messages
-            messages.append(response)
         
         # If we hit max iterations, return the last response
         return {
