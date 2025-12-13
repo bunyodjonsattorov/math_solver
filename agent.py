@@ -65,7 +65,8 @@ Remember: Code execution is mandatory. Print your results. No guessing."""
         prefix=strict_prefix,
         agent_executor_kwargs={
             "handle_parsing_errors": True,
-            "max_iterations": 10
+            "max_iterations": 10,
+            "return_intermediate_steps": True
         }
     )
     
