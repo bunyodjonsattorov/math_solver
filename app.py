@@ -201,10 +201,6 @@ if "agent" not in st.session_state:
 with st.sidebar:
     st.header("Upload Problem")
     uploaded_file = st.file_uploader("Choose an image...", type=["jpg", "png", "jpeg"])
-    if st.button("Clear History"):
-        st.session_state.messages = []
-        st.session_state.pop("last_processed_file", None) # Reset file memory
-        st.rerun()
 
 # Display History
 for msg in st.session_state.messages:
