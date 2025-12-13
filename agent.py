@@ -1,24 +1,6 @@
 import os
 from langchain_openai import ChatOpenAI
-from langchain_core.prompts import ChatPromptTemplate
-from langchain_experimental.tools import PythonREPLTool
-
-# LangChain v1.x imports (version 1.1.3+)
-# In v1.x, AgentExecutor and create_openai_tools_agent are in different locations
-try:
-    from langchain.agents import create_openai_tools_agent
-except ImportError:
-    raise ImportError("create_openai_tools_agent not found. Check LangChain version.")
-
-# AgentExecutor location varies in v1.x
-try:
-    from langchain.agents import AgentExecutor
-except ImportError:
-    try:
-        from langchain_core.agents import AgentExecutor
-    except ImportError:
-        # Last resort for v1.x
-        from langchain.agents.agent_executor import AgentExecutor
+from langchain_experimental.agents.agent_toolkits import create_python_agent
 
 # --- API Key Setup ---
 OPENAI_API_KEY = None
@@ -37,52 +19,22 @@ if not OPENAI_API_KEY:
 
 def get_math_agent():
     """Build a math agent that uses Python for calculations."""
-    # 1. Setup LLM
+    # Setup LLM
     llm = ChatOpenAI(
         model="gpt-4o-mini", 
         temperature=0,
         openai_api_key=OPENAI_API_KEY
     )
     
-    # 2. Setup Tools
-    tools = [PythonREPLTool()]
-    
-    # 3. Prompt (Updated with Graphing Rules)
-    prompt = ChatPromptTemplate.from_messages([
-        ("system", 
-         "You are an expert Cambridge A-Level Math Tutor. "
-         "Your goal is to solve the user's problem using Python code. "
-         "\n\n"
-         "CRITICAL RULES:\n"
-         "1. You MUST use 'print(...)' to see outputs. The tool does not return values automatically.\n"
-         "2. Once you print the correct answer, STOP CODING.\n"
-         "\n"
-         "GRAPHING / PLOTTING RULES:\n"
-         "- If the user asks for a graph, use 'import matplotlib.pyplot as plt'.\n"
-         "- Define x values using numpy (e.g., x = np.linspace(-10, 10, 100)).\n"
-         "- Plot the function using plt.plot(x, y).\n"
-         "- DO NOT use plt.show(). It will cause an error.\n"
-         "- INSTEAD, use 'plt.savefig('graph.png')' to save the image.\n"
-         "- Finally, print: 'Graph generated and saved to graph.png'.\n"
-         "\n"
-         "MATH GUIDELINES:\n"
-         "- Use SymPy for symbolic math.\n"
-         "- Format final answers with LaTeX."),
-        ("human", "{input}"),
-        ("placeholder", "{agent_scratchpad}"),
-    ])
-
-    # 4. Create Agent (using create_openai_tools_agent for LangChain v1.x)
-    agent = create_openai_tools_agent(llm, tools, prompt)
-
-    # 5. Create Executor
-    agent_executor = AgentExecutor(
-        agent=agent, 
-        tools=tools, 
+    # Create Python agent (this is more stable across LangChain versions)
+    # create_python_agent handles the AgentExecutor setup internally
+    agent_executor = create_python_agent(
+        llm=llm,
+        tool=None,  # Uses PythonREPLTool by default
         verbose=True,
         handle_parsing_errors=True,
         return_intermediate_steps=True,
-        max_iterations=10  # Increased from 5 to handle complex problems
+        max_iterations=10
     )
     
     return agent_executor
