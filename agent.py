@@ -1,6 +1,7 @@
 import os
 from langchain_openai import ChatOpenAI
 from langchain_experimental.agents.agent_toolkits import create_python_agent
+from langchain_experimental.tools import PythonREPLTool
 
 def _get_api_key():
     """Get API key from secrets or environment."""
@@ -34,12 +35,15 @@ def get_math_agent():
     
     # Create Python agent (this is more stable across LangChain versions)
     # create_python_agent handles the AgentExecutor setup internally
-    # Note: return_intermediate_steps is not supported by create_python_agent
+    tool = PythonREPLTool()
     agent_executor = create_python_agent(
         llm=llm,
+        tool=tool,
         verbose=True,
-        handle_parsing_errors=True,
-        max_iterations=10
+        agent_executor_kwargs={
+            "handle_parsing_errors": True,
+            "max_iterations": 10
+        }
     )
     
     return agent_executor
