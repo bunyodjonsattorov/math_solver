@@ -51,6 +51,7 @@ def process_and_display(prompt_input):
             try:
                 response_data = st.session_state.agent.invoke({"input": prompt_input})
                 final_answer = response_data['output']
+                # Note: create_python_agent may not return intermediate_steps
                 steps = response_data.get('intermediate_steps', [])
                 
                 # 1. Show Reasoning

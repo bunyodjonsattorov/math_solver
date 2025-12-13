@@ -34,12 +34,11 @@ def get_math_agent():
     
     # Create Python agent (this is more stable across LangChain versions)
     # create_python_agent handles the AgentExecutor setup internally
+    # Note: return_intermediate_steps is not supported by create_python_agent
     agent_executor = create_python_agent(
         llm=llm,
-        tool=None,  # Uses PythonREPLTool by default
         verbose=True,
         handle_parsing_errors=True,
-        return_intermediate_steps=True,
         max_iterations=10
     )
     
