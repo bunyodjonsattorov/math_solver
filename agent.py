@@ -1,8 +1,17 @@
 import os
-from langchain.agents import create_tool_calling_agent, AgentExecutor
+from langchain.agents import AgentExecutor
 from langchain_openai import ChatOpenAI
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_experimental.tools import PythonREPLTool
+
+# Handle different LangChain versions
+try:
+    from langchain.agents import create_tool_calling_agent
+except ImportError:
+    try:
+        from langchain_core.agents import create_tool_calling_agent
+    except ImportError:
+        from langchain.agents.agent_toolkits import create_tool_calling_agent
 
 # --- API Key Setup ---
 OPENAI_API_KEY = None
