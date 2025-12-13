@@ -15,9 +15,10 @@ try:
     from langchain.agents import AgentExecutor
 except ImportError:
     try:
-        from langchain.agents.agent_executor import AgentExecutor
-    except ImportError:
         from langchain_core.agents import AgentExecutor
+    except ImportError:
+        # Last resort for v1.x
+        from langchain.agents.agent_executor import AgentExecutor
 
 # --- API Key Setup ---
 OPENAI_API_KEY = None
@@ -46,7 +47,7 @@ def get_math_agent():
     # 2. Setup Tools
     tools = [PythonREPLTool()]
     
-# 3. Prompt (Updated with Graphing Rules)
+    # 3. Prompt (Updated with Graphing Rules)
     prompt = ChatPromptTemplate.from_messages([
         ("system", 
          "You are an expert Cambridge A-Level Math Tutor. "
