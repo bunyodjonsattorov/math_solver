@@ -1,6 +1,6 @@
 import os
 import streamlit as st
-from langchain.agents import AgentExecutor, create_tool_calling_agent
+from langchain.agents import AgentExecutor, create_openai_tools_agent
 from langchain_openai import ChatOpenAI
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_experimental.tools import PythonREPLTool
@@ -58,7 +58,7 @@ def get_math_agent():
     # --- 5. THE AGENT (Modern Tool Caller) ---
     # This specific function uses OpenAI's native tool calling capability
     # It does NOT parse text for "Action:", so the error loop is impossible.
-    agent = create_tool_calling_agent(llm, tools, prompt)
+    agent = create_openai_tools_agent(llm, tools, prompt)
 
     # --- 6. THE EXECUTOR ---
     agent_executor = AgentExecutor(
