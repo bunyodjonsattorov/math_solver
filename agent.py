@@ -3,18 +3,20 @@ from langchain_openai import ChatOpenAI
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_experimental.tools import PythonREPLTool
 
-# LangChain v1.x imports (for version 1.1.3+)
+# LangChain v1.x imports (version 1.1.3+)
+# In v1.x, imports changed significantly
 try:
-    from langchain.agents import AgentExecutor, create_tool_calling_agent
+    # Try v1.x standard imports
+    from langchain.agents import create_tool_calling_agent
+    from langchain.agents.agent_executor import AgentExecutor
 except ImportError:
-    # Fallback for LangChain v1.x structure
     try:
+        # Alternative v1.x path
+        from langchain.agents import create_tool_calling_agent
         from langchain_core.agents import AgentExecutor
-        from langchain.agents import create_tool_calling_agent
     except ImportError:
-        # Last resort: try v1.x specific paths
-        from langchain.agents.agent_executor import AgentExecutor
-        from langchain.agents import create_tool_calling_agent
+        # Fallback to v0.x structure (shouldn't happen with v1.1.3)
+        from langchain.agents import AgentExecutor, create_tool_calling_agent
 
 # --- API Key Setup ---
 OPENAI_API_KEY = None
