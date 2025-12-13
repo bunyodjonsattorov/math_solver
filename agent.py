@@ -1,12 +1,13 @@
 import os
 import streamlit as st
-from langchain.agents import AgentExecutor, create_react_agent
 from langchain_openai import ChatOpenAI
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_experimental.tools import PythonREPLTool
+from langchain_core.messages import ToolMessage
 
-# --- 1. SETUP API KEY ---
-# Try to get key from Streamlit secrets, otherwise environment variable
+# This version uses LLM with tools bound directly - no agent creation functions needed
+# This is the most compatible approach that works with any LangChain version
+
 def _get_api_key():
     """Get API key from secrets or environment."""
     OPENAI_API_KEY = None
@@ -25,7 +26,7 @@ def _get_api_key():
     return OPENAI_API_KEY
 
 def get_math_agent():
-    # --- 2. THE BRAIN (LLM) ---
+    """Build a math agent using LLM with tools bound directly."""
     OPENAI_API_KEY = _get_api_key()
     
     llm = ChatOpenAI(
@@ -34,38 +35,88 @@ def get_math_agent():
         openai_api_key=OPENAI_API_KEY
     )
 
-    # --- 3. THE TOOLS ---
     tools = [PythonREPLTool()]
+    tool_map = {tool.name: tool for tool in tools}
+    llm_with_tools = llm.bind_tools(tools)
     
-    # --- 4. THE PROMPT (Optimized for ReAct to avoid parsing errors) ---
-    # Using a cleaner prompt format that works better with ReAct
     prompt = ChatPromptTemplate.from_messages([
         ("system", 
          "You are an expert Cambridge A-Level Math Tutor. "
-         "Your goal is to solve the user's problem using Python code.\n\n"
-         "You have access to a Python REPL tool. Always use it to solve problems.\n"
-         "To see output, use print(). For graphs, save to 'graph.png' using matplotlib.\n"
-         "After getting the answer, provide it in LaTeX format."),
+         "Your goal is to solve the user's problem using Python code. "
+         "\n\n"
+         "### INSTRUCTIONS:\n"
+         "- You have access to a Python REPL tool. USE IT.\n"
+         "- To see the output of your code, you MUST use 'print(...)'.\n"
+         "- If the code errors, fix it and try again.\n"
+         "- If the user asks for a graph, save it as 'graph.png' using matplotlib.\n"
+         "- Once you have the answer printed, reply to the user with the final answer in LaTeX.\n"
+         "- DO NOT just 'think' about it. Write and Run code."),
         ("human", "{input}"),
-        ("placeholder", "{agent_scratchpad}"),
     ])
-
-    # --- 5. CREATE REACT AGENT (More compatible) ---
-    # This is more widely available than create_tool_calling_agent
-    agent = create_react_agent(llm, tools, prompt)
-
-    # --- 6. THE EXECUTOR WITH BETTER ERROR HANDLING ---
-    def handle_parsing_error(error):
-        """Custom error handler to prevent loops."""
-        return "I need to use the Python tool to solve this. Let me try again with the correct format."
-
-    agent_executor = AgentExecutor(
-        agent=agent, 
-        tools=tools, 
-        verbose=True,
-        handle_parsing_errors=handle_parsing_error,
-        max_iterations=10,
-        return_intermediate_steps=True
-    )
     
-    return agent_executor
+    def agent_chain(input_dict):
+        """Agent chain that handles tool calling manually."""
+        messages = list(prompt.invoke(input_dict).to_messages())
+        max_iterations = 10
+        intermediate_steps = []
+        
+        for iteration in range(max_iterations):
+            response = llm_with_tools.invoke(messages)
+            
+            # If no tool calls, return the final answer
+            if not hasattr(response, 'tool_calls') or not response.tool_calls:
+                return {
+                    "output": response.content,
+                    "intermediate_steps": intermediate_steps
+                }
+            
+            # Execute tool calls
+            for tool_call in response.tool_calls:
+                tool_name = tool_call.get("name")
+                tool_args = tool_call.get("args", {})
+                tool_call_id = tool_call.get("id", "")
+                
+                if tool_name in tool_map:
+                    try:
+                        # Execute the tool
+                        result = tool_map[tool_name].invoke(tool_args)
+                        tool_message = ToolMessage(
+                            content=str(result),
+                            tool_call_id=tool_call_id
+                        )
+                        messages.append(tool_message)
+                        
+                        # Store intermediate step for debugging
+                        intermediate_steps.append((
+                            type('Action', (), {'tool_input': tool_args.get('query', str(tool_args))})(),
+                            str(result)
+                        ))
+                    except Exception as e:
+                        error_msg = ToolMessage(
+                            content=f"Error: {str(e)}",
+                            tool_call_id=tool_call_id
+                        )
+                        messages.append(error_msg)
+                        intermediate_steps.append((
+                            type('Action', (), {'tool_input': tool_args.get('query', str(tool_args))})(),
+                            f"Error: {str(e)}"
+                        ))
+            
+            # Add the AI response to messages
+            messages.append(response)
+        
+        # If we hit max iterations, return the last response
+        return {
+            "output": response.content if hasattr(response, 'content') else "Maximum iterations reached.",
+            "intermediate_steps": intermediate_steps
+        }
+    
+    class SimpleAgentExecutor:
+        """Simple executor that mimics AgentExecutor interface."""
+        def __init__(self, chain):
+            self.chain = chain
+        
+        def invoke(self, input_dict):
+            return self.chain(input_dict)
+    
+    return SimpleAgentExecutor(agent_chain)
