@@ -4,19 +4,18 @@ from langchain_core.prompts import ChatPromptTemplate
 from langchain_experimental.tools import PythonREPLTool
 
 # LangChain v1.x imports (version 1.1.3+)
-# In v1.x, imports changed significantly
+# In v1.x, use create_openai_tools_agent instead of create_tool_calling_agent
 try:
-    # Try v1.x standard imports
-    from langchain.agents import create_tool_calling_agent
-    from langchain.agents.agent_executor import AgentExecutor
+    from langchain.agents import create_openai_tools_agent, AgentExecutor
 except ImportError:
+    # Fallback: try alternative v1.x paths
     try:
-        # Alternative v1.x path
-        from langchain.agents import create_tool_calling_agent
-        from langchain_core.agents import AgentExecutor
+        from langchain.agents import create_openai_tools_agent
+        from langchain.agents.agent_executor import AgentExecutor
     except ImportError:
-        # Fallback to v0.x structure (shouldn't happen with v1.1.3)
-        from langchain.agents import AgentExecutor, create_tool_calling_agent
+        # Last resort: try v0.x paths
+        from langchain.agents import AgentExecutor
+        from langchain.agents import create_tool_calling_agent as create_openai_tools_agent
 
 # --- API Key Setup ---
 OPENAI_API_KEY = None
@@ -70,16 +69,8 @@ def get_math_agent():
         ("placeholder", "{agent_scratchpad}"),
     ])
 
-    # 4. Create Agent (with runtime fallback)
-    try:
-        agent = create_tool_calling_agent(llm, tools, prompt)
-    except (AttributeError, TypeError) as e:
-        # If create_tool_calling_agent doesn't work, try create_openai_tools_agent
-        try:
-            from langchain.agents import create_openai_tools_agent
-            agent = create_openai_tools_agent(llm, tools, prompt)
-        except ImportError:
-            raise ImportError(f"Could not create agent. Error: {e}")
+    # 4. Create Agent (using create_openai_tools_agent for LangChain v1.x)
+    agent = create_openai_tools_agent(llm, tools, prompt)
 
     # 5. Create Executor
     agent_executor = AgentExecutor(
