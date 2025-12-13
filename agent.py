@@ -1,6 +1,6 @@
 import os
 import streamlit as st
-from langchain.agents import AgentExecutor, create_openai_tools_agent
+from langchain.agents import AgentExecutor, create_react_agent
 from langchain_openai import ChatOpenAI
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_experimental.tools import PythonREPLTool
@@ -37,37 +37,35 @@ def get_math_agent():
     # --- 3. THE TOOLS ---
     tools = [PythonREPLTool()]
     
-    # --- 4. THE PROMPT (Specific for Tool Calling) ---
-    # We do NOT use "Thought/Action" prompts here. We just give instructions.
+    # --- 4. THE PROMPT (Optimized for ReAct to avoid parsing errors) ---
+    # Using a cleaner prompt format that works better with ReAct
     prompt = ChatPromptTemplate.from_messages([
         ("system", 
          "You are an expert Cambridge A-Level Math Tutor. "
-         "Your goal is to solve the user's problem using Python code. "
-         "\n\n"
-         "### INSTRUCTIONS:\n"
-         "- You have access to a Python REPL tool. USE IT.\n"
-         "- To see the output of your code, you MUST use 'print(...)'.\n"
-         "- If the code errors, fix it and try again.\n"
-         "- If the user asks for a graph, save it as 'graph.png' using matplotlib.\n"
-         "- Once you have the answer printed, reply to the user with the final answer in LaTeX.\n"
-         "- DO NOT just 'think' about it. Write and Run code."),
+         "Your goal is to solve the user's problem using Python code.\n\n"
+         "You have access to a Python REPL tool. Always use it to solve problems.\n"
+         "To see output, use print(). For graphs, save to 'graph.png' using matplotlib.\n"
+         "After getting the answer, provide it in LaTeX format."),
         ("human", "{input}"),
-        ("placeholder", "{agent_scratchpad}"), # This is where the magic happens for tool calling
+        ("placeholder", "{agent_scratchpad}"),
     ])
 
-    # --- 5. THE AGENT (Modern Tool Caller) ---
-    # This specific function uses OpenAI's native tool calling capability
-    # It does NOT parse text for "Action:", so the error loop is impossible.
-    agent = create_openai_tools_agent(llm, tools, prompt)
+    # --- 5. CREATE REACT AGENT (More compatible) ---
+    # This is more widely available than create_tool_calling_agent
+    agent = create_react_agent(llm, tools, prompt)
 
-    # --- 6. THE EXECUTOR ---
+    # --- 6. THE EXECUTOR WITH BETTER ERROR HANDLING ---
+    def handle_parsing_error(error):
+        """Custom error handler to prevent loops."""
+        return "I need to use the Python tool to solve this. Let me try again with the correct format."
+
     agent_executor = AgentExecutor(
         agent=agent, 
         tools=tools, 
         verbose=True,
-        # We handle errors differently now
-        handle_parsing_errors=True,
-        max_iterations=10
+        handle_parsing_errors=handle_parsing_error,
+        max_iterations=10,
+        return_intermediate_steps=True
     )
     
     return agent_executor
