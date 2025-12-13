@@ -51,38 +51,43 @@ This project demonstrates **production-grade AI agent development** by solving a
 
 ### System Design
 
-```
-┌─────────────────┐
-│   Streamlit UI  │  ← User Interface (app.py)
-└────────┬────────┘
-         │
-         ▼
-┌─────────────────┐
-│  LangChain Agent │  ← AI Agent (agent.py)
-│  (GPT-4o-mini)  │
-└────────┬────────┘
-         │
-         ▼
-┌─────────────────┐
-│  Python REPL    │  ← Code Execution
-│  (SymPy/NumPy)  │
-└─────────────────┘
+```mermaid
+graph TD
+    A[User Uploads Image] -->|GPT-4o Vision| B(Transcribed Text)
+    B --> C{Agent Loop}
+    C -->|Reasoning| D[GPT-4o-mini]
+    D -->|Tool Call| E[Python REPL]
+    E -->|Execution| F(SymPy / Matplotlib)
+    F -->|Output/Error| D
+    D -->|Final Answer| G[Streamlit UI]
+    F -.->|Graph.png| G
 ```
 
-### How It Works
+### Neuro-Symbolic Execution Flow
+
+The system implements a **custom agent loop** that orchestrates the interaction between neural (LLM) and symbolic (Python execution) components:
 
 1. **User Input**: Problem entered via text or image upload
-2. **Image Processing** (if applicable): GPT-4o Vision transcribes the problem
-3. **Agent Reasoning**: LangChain agent analyzes the problem and generates Python code
-4. **Code Execution**: Python REPL executes code using SymPy/NumPy/Matplotlib
-5. **Result Display**: Solution, steps, and graphs displayed in the UI
+2. **Image Processing** (if applicable): GPT-4o Vision transcribes the problem with high-detail OCR
+3. **Agent Reasoning**: Custom loop using `llm.bind_tools()` - GPT-4o-mini analyzes the problem and decides to call tools
+4. **Tool Execution**: Python REPL executes code using SymPy/NumPy/Matplotlib
+5. **Loop Detection**: System detects infinite loops and missing `print()` statements
+6. **Memory Management**: Conversation history is maintained for follow-up questions
+7. **Result Display**: Solution, steps, and graphs displayed in the UI
+
+### Key Architectural Decisions
+
+- **Custom Loop vs. Framework Wrapper**: Manual implementation provides better control over error handling, loop detection, and memory management
+- **Tool Binding**: Direct `llm.bind_tools()` integration ensures native OpenAI tool calling without text parsing errors
+- **Conversation Memory**: Last 6-8 messages are passed as context, enabling natural follow-up questions
 
 ### Technical Highlights
 
-- **Agent Framework**: Uses `create_python_agent` from LangChain Experimental for stable, cross-version compatibility
+- **Custom Agent Architecture**: Implemented a bespoke **Neuro-Symbolic execution loop** using `llm.bind_tools`. This manual orchestration handles infinite loop detection, strictly enforces `print()` usage for output visibility, and manages conversational memory more robustly than standard framework wrappers
 - **Prompt Engineering**: Strict prompts enforce code execution and prevent hallucination
 - **Tool Integration**: PythonREPLTool provides sandboxed code execution
 - **State Management**: Streamlit session state maintains conversation context
+- **Memory Management**: Custom conversation history tracking enables follow-up questions and solution explanations
 
 ---
 
@@ -187,8 +192,8 @@ math_solver/
 
 ### Key Files Explained
 
-- **`agent.py`**: Contains the core AI agent logic, including strict prompts that enforce code execution and prevent hallucination
-- **`app.py`**: Streamlit UI with chat interface, image upload, and graph display
+- **`agent.py`**: Custom neuro-symbolic agent implementation with manual tool-calling loop, infinite loop detection, and conversation memory management. Uses `llm.bind_tools()` for native OpenAI tool calling
+- **`app.py`**: Streamlit UI with chat interface, image upload, graph display, and conversation history management
 - **`main.py`**: Command-line interface for testing without the web UI
 - **`config.py`**: Centralized API key management from environment variables
 
