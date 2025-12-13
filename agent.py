@@ -4,18 +4,20 @@ from langchain_core.prompts import ChatPromptTemplate
 from langchain_experimental.tools import PythonREPLTool
 
 # LangChain v1.x imports (version 1.1.3+)
-# In v1.x, use create_openai_tools_agent instead of create_tool_calling_agent
+# In v1.x, AgentExecutor and create_openai_tools_agent are in different locations
 try:
-    from langchain.agents import create_openai_tools_agent, AgentExecutor
+    from langchain.agents import create_openai_tools_agent
 except ImportError:
-    # Fallback: try alternative v1.x paths
+    raise ImportError("create_openai_tools_agent not found. Check LangChain version.")
+
+# AgentExecutor location varies in v1.x
+try:
+    from langchain.agents import AgentExecutor
+except ImportError:
     try:
-        from langchain.agents import create_openai_tools_agent
         from langchain.agents.agent_executor import AgentExecutor
     except ImportError:
-        # Last resort: try v0.x paths
-        from langchain.agents import AgentExecutor
-        from langchain.agents import create_tool_calling_agent as create_openai_tools_agent
+        from langchain_core.agents import AgentExecutor
 
 # --- API Key Setup ---
 OPENAI_API_KEY = None
