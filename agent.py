@@ -75,8 +75,16 @@ def get_math_agent():
         ("placeholder", "{agent_scratchpad}"),
     ])
 
-    # 4. Create Agent
-    agent = create_tool_calling_agent(llm, tools, prompt)
+    # 4. Create Agent (with runtime fallback)
+    try:
+        agent = create_tool_calling_agent(llm, tools, prompt)
+    except (AttributeError, TypeError) as e:
+        # If create_tool_calling_agent doesn't work, try create_openai_tools_agent
+        try:
+            from langchain.agents import create_openai_tools_agent
+            agent = create_openai_tools_agent(llm, tools, prompt)
+        except ImportError:
+            raise ImportError(f"Could not create agent. Error: {e}")
 
     # 5. Create Executor
     agent_executor = AgentExecutor(
