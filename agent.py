@@ -3,7 +3,7 @@ import streamlit as st
 from langchain_openai import ChatOpenAI
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_experimental.tools import PythonREPLTool
-from langchain_core.messages import ToolMessage
+from langchain_core.messages import ToolMessage, HumanMessage
 
 # This version uses LLM with tools bound directly - no agent creation functions needed
 # This is the most compatible approach that works with any LangChain version
@@ -47,11 +47,13 @@ def get_math_agent():
          "### CRITICAL INSTRUCTIONS:\n"
          "- You MUST use the Python REPL tool to solve EVERY problem. Do not try to solve it without running code.\n"
          "- Write Python code using sympy, numpy, or matplotlib as needed.\n"
-         "- The LAST line of your code MUST be print() with the final answer.\n"
-         "- To see output, you MUST use 'print(...)'. Never just write a variable name.\n"
+         "- The LAST line of your code MUST be print() with the final answer. Example: print(final_answer)\n"
+         "- NEVER just write a variable name like 'final_curve'. You MUST use print(final_curve) to see the output.\n"
+         "- If you see output that is just a variable name (like 'final_curve'), it means you forgot to use print(). Add print() immediately.\n"
          "- If the code errors, fix it and try again.\n"
          "- For graphs, save to 'graph.png' using matplotlib, then print confirmation.\n"
-         "- After you see the print() output, provide the final answer in LaTeX format.\n"
+         "- After you see the print() output with the actual result, provide the final answer in LaTeX format.\n"
+         "- If you've already run similar code multiple times, check if you're missing print() on the last line.\n"
          "- NEVER try to solve problems without using the tool. ALWAYS write and execute code first."),
         ("human", "{input}"),
     ])
@@ -61,6 +63,7 @@ def get_math_agent():
         messages = list(prompt.invoke(input_dict).to_messages())
         max_iterations = 10
         intermediate_steps = []
+        previous_codes = []  # Track previous code to detect loops
         
         for iteration in range(max_iterations):
             try:
@@ -120,17 +123,44 @@ def get_math_agent():
                             code = tool_args.get('code', tool_args.get('input', str(tool_args)))
                             tool_args = {"query": code}
                         
+                        code_input = tool_args.get('query', str(tool_args))
+                        
+                        # Detect loops - if same code was run recently
+                        is_loop = code_input in previous_codes[-2:]  # Check last 2 codes
+                        previous_codes.append(code_input)
+                        if len(previous_codes) > 5:
+                            previous_codes.pop(0)  # Keep only last 5
+                        
+                        # Check if code doesn't have print() on last line
+                        lines = code_input.strip().split('\n')
+                        last_line = lines[-1].strip() if lines else ""
+                        missing_print = 'print(' not in code_input and iteration > 1
+                        is_variable_line = (last_line and not last_line.startswith('#') 
+                                          and '=' not in last_line 
+                                          and '(' not in last_line 
+                                          and (last_line.replace('_', '').replace('.', '').isalnum() or '_' in last_line))
+                        
                         # Execute the tool
                         result = tool_map[tool_name].invoke(tool_args)
+                        result_str = str(result)
+                        
+                        # Add helpful feedback if we detect issues
+                        if is_loop or (missing_print and is_variable_line):
+                            feedback = "\n\n⚠️ HINT: The output above might not show the actual value. "
+                            if is_variable_line:
+                                feedback += f"Your last line '{last_line}' needs print() to show output. Change it to: print({last_line})"
+                            elif is_loop:
+                                feedback += "You've run similar code before. Make sure the last line uses print() to display the result."
+                            result_str = result_str + feedback
+                        
                         tool_message = ToolMessage(
-                            content=str(result),
+                            content=result_str,
                             tool_call_id=tool_call_id
                         )
                         # Add ToolMessage AFTER the AIMessage
                         messages.append(tool_message)
                         
                         # Store intermediate step for debugging
-                        code_input = tool_args.get('query', str(tool_args))
                         intermediate_steps.append((
                             type('Action', (), {'tool_input': code_input})(),
                             str(result)
@@ -149,9 +179,19 @@ def get_math_agent():
                             error_str
                         ))
         
-        # If we hit max iterations, return the last response
+        # If we hit max iterations, provide helpful feedback
+        last_code = previous_codes[-1] if previous_codes else ""
+        if last_code and 'print(' not in last_code:
+            lines = last_code.strip().split('\n')
+            last_line = lines[-1].strip() if lines else ""
+            if last_line and not last_line.startswith('#') and '=' not in last_line:
+                hint = f"\n\n💡 TIP: The code was missing print() on the last line. Try adding: print({last_line})"
+                final_output = f"Maximum iterations reached. The code needs print() to display results.{hint}"
+        else:
+            final_output = "Maximum iterations reached. Please check if the code is using print() to display results."
+        
         return {
-            "output": response.content if hasattr(response, 'content') and response.content else "Maximum iterations reached.",
+            "output": response.content if hasattr(response, 'content') and response.content else final_output,
             "intermediate_steps": intermediate_steps
         }
     
