@@ -9,7 +9,7 @@
 [![Streamlit](https://img.shields.io/badge/Streamlit-Cloud-red.svg)](https://streamlit.io/)
 [![OpenAI](https://img.shields.io/badge/OpenAI-GPT--4o-orange.svg)](https://openai.com/)
 
-[Live Demo](https://cambridge-math-ai.streamlit.app/) • [Documentation](#features) • [Report Bug](#)
+[Live Demo](https://cambridge-math-ai.streamlit.app/) • [Documentation](#features) • [Report Bug](https://github.com/bunyodjonsattorov/math_solver/issues)
 
 </div>
 
@@ -187,7 +187,7 @@ math_solver/
 ├── config.py         # Configuration management (API keys)
 ├── requirements.txt  # Python dependencies
 ├── README.md         # This file
-└── data/             # PDF textbooks (optional, for future RAG)
+└── (data folder removed)
 ```
 
 ### Key Files Explained
