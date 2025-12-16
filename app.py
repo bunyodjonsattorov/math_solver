@@ -109,11 +109,11 @@ def analyze_image(uploaded_file):
         return result
         
     except Exception as e:
-        import traceback
-        error_details = traceback.format_exc()
-        st.error(f"Error analyzing image: {str(e)}")
-        # Return a helpful message instead of None
-        return f"Error processing image: {str(e)}. Please try typing the problem manually or upload a different image."
+        # User-friendly error for vision
+        st.error(f"Could not analyze image. Please try again with a clearer picture.")
+        with st.expander("Debug Details"):
+            st.write(str(e))
+        return f"Error processing image. Please try typing the problem manually."
 
 def process_and_display(prompt_input):
     """Runs the agent and updates UI."""
@@ -157,8 +157,15 @@ def process_and_display(prompt_input):
                             try:
                                 action = step[0]
                                 observation = step[1]
+                                st.markdown("**Input Code:**")
                                 st.code(action.tool_input, language="python")
-                                st.text(f"Output: {observation}")
+                                st.markdown("**Output:**")
+                                # Truncate very long outputs for display
+                                if len(str(observation)) > 500:
+                                    st.text(f"{str(observation)[:500]}... (truncated)")
+                                else:
+                                    st.text(f"{observation}")
+                                st.divider()
                             except:
                                 pass
                 
@@ -186,7 +193,12 @@ def process_and_display(prompt_input):
                 st.session_state.messages.append(msg_data)
                 
             except Exception as e:
-                st.error(f"Agent Error: {e}")
+                import traceback
+                error_msg = f"I ran into an issue solving this. Please try again or rephrase the question."
+                st.error(error_msg)
+                with st.expander("Debug Details"):
+                    st.write(str(e))
+                    st.code(traceback.format_exc())
 
 # --- Main UI ---
 st.title("🎓 Cambridge A-Level Math Solver")
@@ -199,8 +211,19 @@ if "agent" not in st.session_state:
 
 # Sidebar
 with st.sidebar:
-    st.header("Upload Problem")
+    st.header("Tools")
+    
+    # Upload Problem
+    st.subheader("Upload Problem")
     uploaded_file = st.file_uploader("Choose an image...", type=["jpg", "png", "jpeg"])
+    
+    st.divider()
+    
+    # Clear History Button
+    if st.button("🗑️ Clear History"):
+        st.session_state.messages = []
+        st.session_state.last_processed_file = None
+        st.rerun()
 
 # Display History
 for msg in st.session_state.messages:
@@ -215,8 +238,11 @@ for msg in st.session_state.messages:
             with st.expander("View Python Logic"):
                 for step in msg["steps"]:
                     try:
+                        st.markdown("**Input Code:**")
                         st.code(step[0].tool_input, language="python")
-                        st.text(f"Output: {step[1]}")
+                        st.markdown("**Output:**")
+                        st.text(f"{step[1]}")
+                        st.divider()
                     except:
                         pass
 

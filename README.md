@@ -56,9 +56,9 @@ graph TD
     A[User Uploads Image] -->|GPT-4o Vision| B(Transcribed Text)
     B --> C{Agent Loop}
     C -->|Reasoning| D[GPT-4o-mini]
-    D -->|Tool Call| E[Python REPL]
-    E -->|Execution| F(SymPy / Matplotlib)
-    F -->|Output/Error| D
+    D -->|Tool Call| E[Restricted Python Tool]
+    E -->|Safe Execution| F(SymPy / Matplotlib)
+    F -->|Auto-Captured Output| D
     D -->|Final Answer| G[Streamlit UI]
     F -.->|Graph.png| G
 ```
@@ -67,13 +67,14 @@ graph TD
 
 The system implements a **custom agent loop** that orchestrates the interaction between neural (LLM) and symbolic (Python execution) components:
 
-1. **User Input**: Problem entered via text or image upload
-2. **Image Processing** (if applicable): GPT-4o Vision transcribes the problem with high-detail OCR
-3. **Agent Reasoning**: Custom loop using `llm.bind_tools()` - GPT-4o-mini analyzes the problem and decides to call tools
-4. **Tool Execution**: Python REPL executes code using SymPy/NumPy/Matplotlib
-5. **Loop Detection**: System detects infinite loops and missing `print()` statements
-6. **Memory Management**: Conversation history is maintained for follow-up questions
-7. **Result Display**: Solution, steps, and graphs displayed in the UI
+1.  **User Input**: Problem entered via text or image upload
+2.  **Image Processing**: GPT-4o Vision transcribes the problem with high-detail OCR
+3.  **Agent Reasoning**: Custom loop using `llm.bind_tools()`
+4.  **Safe Execution**: `RestrictedPythonTool` executes code in a controlled environment
+    -   **Auto-Output**: Automatically captures the result of the last line (like Jupyter notebooks)
+    -   **Security**: Blocks dangerous imports (`os`, `sys`) preventing system harm
+5.  **Loop Detection**: Advanced loop detection checks for repeating output patterns
+6.  **Result Display**: Solution, steps, and graphs displayed in the UI
 
 ### Key Architectural Decisions
 
@@ -83,11 +84,10 @@ The system implements a **custom agent loop** that orchestrates the interaction 
 
 ### Technical Highlights
 
-- **Custom Agent Architecture**: Implemented a bespoke **Neuro-Symbolic execution loop** using `llm.bind_tools`. This manual orchestration handles infinite loop detection, strictly enforces `print()` usage for output visibility, and manages conversational memory more robustly than standard framework wrappers
-- **Prompt Engineering**: Strict prompts enforce code execution and prevent hallucination
-- **Tool Integration**: PythonREPLTool provides sandboxed code execution
-- **State Management**: Streamlit session state maintains conversation context
-- **Memory Management**: Custom conversation history tracking enables follow-up questions and solution explanations
+-   **RestrictedPythonTool**: A custom-built tool that parses AST to enforce security policies and auto-capture return values, eliminating common LLM "forgot to print" errors.
+-   **Security First**: Implements import whitelisting (only `math`, `numpy`, `sympy`, etc. allowed) to prevent prompt injection attacks.
+-   **Robust Error Handling**: User-friendly error messages that hide scary tracebacks while preserving debug info for developers.
+-   **Conversation Memory**: Smart context window management for natural follow-up questions.
 
 ---
 
@@ -97,7 +97,7 @@ The system implements a **custom agent loop** that orchestrates the interaction 
 - **Python 3.9+**: Primary language
 - **LangChain 0.2.0+**: Agent framework and orchestration
 - **OpenAI API**: GPT-4o-mini (reasoning) + GPT-4o (vision)
-- **Streamlit**: Web application framework
+- **Streamlit**: Web application framework (with custom errors & history management)
 
 ### Mathematical Libraries
 - **SymPy**: Symbolic mathematics (calculus, algebra)

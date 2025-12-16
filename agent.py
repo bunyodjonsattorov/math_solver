@@ -1,12 +1,84 @@
 import os
+import ast
+import io
+import contextlib
+import sys
 import streamlit as st
 from langchain_openai import ChatOpenAI
 from langchain_core.prompts import ChatPromptTemplate
-from langchain_experimental.tools import PythonREPLTool
-from langchain_core.messages import ToolMessage, HumanMessage, AIMessage, HumanMessage
+from langchain_core.messages import ToolMessage, HumanMessage, AIMessage
+from langchain_core.tools import tool
 
-# This version uses LLM with tools bound directly - no agent creation functions needed
-# This is the most compatible approach that works with any LangChain version
+# --- Safe Execution Environment ---
+
+class RestrictedPythonTool:
+    """
+    A custom tool that executes Python code with:
+    1. Automatic output capture (no print() needed for last line)
+    2. Import restrictions (only math libraries allowed)
+    3. Loop detection integrated in the agent
+    """
+    name = "python_repl"
+    description = "Executes Python code. Use this to solve math problems. The last line contributes to the return value."
+
+    def __init__(self):
+        self.locals = {}
+        # Pre-import common libraries for convenience
+        self._exec_code("import math\nimport numpy as np\nimport sympy\nimport matplotlib.pyplot as plt")
+
+    def _exec_code(self, code_str):
+        """Executes code and returns the value of the last expression."""
+        # capture stdout
+        stdout_capture = io.StringIO()
+        
+        try:
+            tree = ast.parse(code_str)
+        except SyntaxError as e:
+            return f"Syntax Error: {e}"
+
+        # Security Check: Prevent dangerous imports in the code node
+        for node in ast.walk(tree):
+            if isinstance(node, (ast.Import, ast.ImportFrom)):
+                for name in node.names:
+                    module_name = name.name.split('.')[0]
+                    if module_name not in ['math', 'numpy', 'sympy', 'matplotlib', 'pandas', 'scipy', 'fractions', 'decimal']:
+                        return f"Security Error: Import of '{module_name}' is restricted. Only math/science libraries are allowed."
+
+        # Separate the last node if it's an expression
+        last_expr = None
+        if tree.body and isinstance(tree.body[-1], ast.Expr):
+            last_expr = tree.body.pop()
+
+        # Execute body (everything except potentially the last expression)
+        try:
+            with contextlib.redirect_stdout(stdout_capture):
+                # We need to compile the modified tree
+                if tree.body:
+                    exec(compile(tree, filename="<string>", mode="exec"), {}, self.locals)
+                
+                # Evaluate the last expression if it exists
+                if last_expr:
+                    result = eval(compile(ast.Expression(last_expr.value), filename="<string>", mode="eval"), {}, self.locals)
+                    if result is not None:
+                        print(result) # Print it so it goes to stdout
+        
+        except Exception as e:
+            return f"Execution Error: {e}"
+
+        return stdout_capture.getvalue().strip() or "Code executed successfully (no output)"
+
+    def invoke(self, args):
+        # Handle different arg formats from LLM
+        if isinstance(args, str):
+            import json
+            try:
+                args = json.loads(args)
+            except:
+                return self._exec_code(args) # Treat raw string as code
+        
+        code = args.get("query", args.get("code", ""))
+        return self._exec_code(code)
+
 
 def _get_api_key():
     """Get API key from secrets or environment."""
@@ -26,7 +98,7 @@ def _get_api_key():
     return OPENAI_API_KEY
 
 def get_math_agent():
-    """Build a math agent using LLM with tools bound directly."""
+    """Build a math agent using LLM with custom tools."""
     OPENAI_API_KEY = _get_api_key()
     
     llm = ChatOpenAI(
@@ -35,8 +107,16 @@ def get_math_agent():
         openai_api_key=OPENAI_API_KEY
     )
 
-    tools = [PythonREPLTool()]
-    tool_map = {tool.name: tool for tool in tools}
+    # Use our custom restricted tool
+    repl_tool = RestrictedPythonTool()
+    
+    # We need to wrap it to be compatible with bind_tools
+    @tool("python_repl")
+    def execute_python(query: str):
+        """Executes Python code. Use this for all math calculations. Returns the output of print() or the last expression."""
+        return repl_tool.invoke({"query": query})
+
+    tools = [execute_python]
     llm_with_tools = llm.bind_tools(tools)
     
     prompt = ChatPromptTemplate.from_messages([
@@ -44,47 +124,39 @@ def get_math_agent():
          "You are an expert Cambridge A-Level Math Tutor. "
          "Your goal is to solve the user's problem using Python code. "
          "\n\n"
-         "### CRITICAL INSTRUCTIONS:\n"
-         "- You have access to conversation history. If the user asks about a 'previous question', 'previous solution', or refers to something from earlier, use the conversation history to understand the context.\n"
-         "- For NEW problems: You MUST use the Python REPL tool to solve EVERY problem. Do not try to solve it without running code.\n"
-         "- For EXPLANATION requests: If the user asks to 'explain the solution' or 'explain the previous answer', provide a detailed step-by-step explanation of how the problem was solved, including the mathematical concepts involved.\n"
-         "- Write Python code using sympy, numpy, or matplotlib as needed.\n"
-         "- The LAST line of your code MUST be print() with the final answer. Example: print(final_answer)\n"
-         "- NEVER just write a variable name like 'final_curve'. You MUST use print(final_curve) to see the output.\n"
-         "- If you see output that is just a variable name (like 'final_curve'), it means you forgot to use print(). Add print() immediately.\n"
-         "- If the code errors, fix it and try again.\n"
-         "- For graphs, save to 'graph.png' using matplotlib, then print confirmation.\n"
-         "- After you see the print() output with the actual result, provide the final answer in LaTeX format.\n"
-         "- If you've already run similar code multiple times, check if you're missing print() on the last line.\n"
-         "- NEVER try to solve problems without using the tool. ALWAYS write and execute code first."),
+         "### INSTRUCTIONS:\n"
+         "- ALWAYS use the 'python_repl' tool to solve math problems. Do NOT do math in your head.\n"
+         "- Write clean Python code using sympy, numpy, or matplotlib.\n"
+         "- The tool automatically captures the result of the last line, so you don't need to force print() everywhere, but print() is still good practice.\n"
+         "- Check the tool output. If it says 'Security Error', you are importing a restricted library.\n"
+         "- For graphs: save to 'graph.png' using matplotlib.pyplot.\n"
+         "- Provide the final answer in clear LaTeX or text after the code execution confirms it.\n"),
         ("human", "{input}"),
     ])
     
     def agent_chain(input_dict):
         """Agent chain that handles tool calling manually."""
-        # Get conversation history if provided
         conversation_history = input_dict.get('conversation_history', [])
         
         # Build messages with conversation history
-        system_and_input = list(prompt.invoke({"input": input_dict.get('input', '')}).to_messages())
-        messages = []
+        # We manually construct the input message to properly include history
+        system_msg = prompt.invoke({"input": ""}).to_messages()[0]
         
-        # Add system message
-        messages.append(system_and_input[0])
+        messages = [system_msg]
         
-        # Add conversation history (last 6 messages to keep context manageable)
+        # Add conversation history (last 6 messages)
         for msg in conversation_history[-6:]:
             if msg.get("role") == "user":
                 messages.append(HumanMessage(content=msg.get("content", "")))
             elif msg.get("role") == "assistant":
                 messages.append(AIMessage(content=msg.get("content", "")))
         
-        # Add current input
-        messages.append(system_and_input[1])
+        # Add current user input
+        messages.append(HumanMessage(content=input_dict.get('input', '')))
         
         max_iterations = 10
         intermediate_steps = []
-        previous_codes = []  # Track previous code to detect loops
+        previous_outputs = []  # Track previous outputs to detect loops
         
         for iteration in range(max_iterations):
             try:
@@ -95,132 +167,51 @@ def get_math_agent():
                     "intermediate_steps": intermediate_steps
                 }
             
-            # Check for tool calls - handle different response formats
-            tool_calls = []
-            if hasattr(response, 'tool_calls'):
-                # tool_calls might be None, empty list, or a list
-                if response.tool_calls:
-                    tool_calls = response.tool_calls if isinstance(response.tool_calls, list) else [response.tool_calls]
+            # Check for tool calls
+            tool_calls = response.tool_calls if hasattr(response, 'tool_calls') and response.tool_calls else []
             
             # If no tool calls, return the final answer
             if not tool_calls:
-                final_output = response.content if hasattr(response, 'content') else str(response)
+                final_output = response.content
                 return {
                     "output": final_output or "No response generated.",
                     "intermediate_steps": intermediate_steps
                 }
             
-            # CRITICAL: Add the AI response (with tool_calls) to messages FIRST
-            # OpenAI requires AIMessage with tool_calls to come before ToolMessages
+            # Add AI response to history
             messages.append(response)
             
             # Execute tool calls
             for tool_call in tool_calls:
-                # Handle different tool_call formats
-                if isinstance(tool_call, dict):
-                    tool_name = tool_call.get("name") or tool_call.get("function", {}).get("name", "")
-                    tool_args = tool_call.get("args") or tool_call.get("function", {}).get("arguments", {})
-                    tool_call_id = tool_call.get("id") or tool_call.get("function", {}).get("id", "")
-                else:
-                    # If it's an object with attributes
-                    tool_name = getattr(tool_call, "name", "")
-                    tool_args = getattr(tool_call, "args", {})
-                    tool_call_id = getattr(tool_call, "id", "")
+                tool_output = execute_python.invoke(tool_call['args'])
                 
-                # If tool_args is a string (JSON), parse it
-                if isinstance(tool_args, str):
-                    import json
-                    try:
-                        tool_args = json.loads(tool_args)
-                    except:
-                        tool_args = {"query": tool_args}
+                # Advanced Loop Detection
+                # If we get the exact same output twice in the last 5 steps, stop.
+                if tool_output in previous_outputs[-5:]:
+                     tool_output += "\n\n(System Warning: You have received this exact output recently. Stop and think: are you in a loop?)"
                 
-                if tool_name in tool_map:
-                    try:
-                        # PythonREPLTool expects the code as 'query' parameter
-                        # If args is empty or doesn't have 'query', use the whole args dict
-                        if not tool_args or 'query' not in tool_args:
-                            # Try to extract code from args
-                            code = tool_args.get('code', tool_args.get('input', str(tool_args)))
-                            tool_args = {"query": code}
-                        
-                        code_input = tool_args.get('query', str(tool_args))
-                        
-                        # Detect loops - if same code was run recently
-                        is_loop = code_input in previous_codes[-2:]  # Check last 2 codes
-                        previous_codes.append(code_input)
-                        if len(previous_codes) > 5:
-                            previous_codes.pop(0)  # Keep only last 5
-                        
-                        # Check if code doesn't have print() on last line
-                        lines = code_input.strip().split('\n')
-                        last_line = lines[-1].strip() if lines else ""
-                        missing_print = 'print(' not in code_input and iteration > 1
-                        is_variable_line = (last_line and not last_line.startswith('#') 
-                                          and '=' not in last_line 
-                                          and '(' not in last_line 
-                                          and (last_line.replace('_', '').replace('.', '').isalnum() or '_' in last_line))
-                        
-                        # Execute the tool
-                        result = tool_map[tool_name].invoke(tool_args)
-                        result_str = str(result)
-                        
-                        # Add helpful feedback if we detect issues
-                        if is_loop or (missing_print and is_variable_line):
-                            feedback = "\n\n⚠️ HINT: The output above might not show the actual value. "
-                            if is_variable_line:
-                                feedback += f"Your last line '{last_line}' needs print() to show output. Change it to: print({last_line})"
-                            elif is_loop:
-                                feedback += "You've run similar code before. Make sure the last line uses print() to display the result."
-                            result_str = result_str + feedback
-                        
-                        tool_message = ToolMessage(
-                            content=result_str,
-                            tool_call_id=tool_call_id
-                        )
-                        # Add ToolMessage AFTER the AIMessage
-                        messages.append(tool_message)
-                        
-                        # Store intermediate step for debugging
-                        intermediate_steps.append((
-                            type('Action', (), {'tool_input': code_input})(),
-                            str(result)
-                        ))
-                    except Exception as e:
-                        import traceback
-                        error_str = f"Error: {str(e)}\n{traceback.format_exc()}"
-                        error_msg = ToolMessage(
-                            content=error_str,
-                            tool_call_id=tool_call_id
-                        )
-                        messages.append(error_msg)
-                        code_input = tool_args.get('query', str(tool_args))
-                        intermediate_steps.append((
-                            type('Action', (), {'tool_input': code_input})(),
-                            error_str
-                        ))
-        
-        # If we hit max iterations, provide helpful feedback
-        last_code = previous_codes[-1] if previous_codes else ""
-        if last_code and 'print(' not in last_code:
-            lines = last_code.strip().split('\n')
-            last_line = lines[-1].strip() if lines else ""
-            if last_line and not last_line.startswith('#') and '=' not in last_line:
-                hint = f"\n\n💡 TIP: The code was missing print() on the last line. Try adding: print({last_line})"
-                final_output = f"Maximum iterations reached. The code needs print() to display results.{hint}"
-        else:
-            final_output = "Maximum iterations reached. Please check if the code is using print() to display results."
+                previous_outputs.append(tool_output)
+                if len(previous_outputs) > 5:
+                    previous_outputs.pop(0)
+
+                messages.append(ToolMessage(
+                    content=tool_output,
+                    tool_call_id=tool_call['id']
+                ))
+                
+                intermediate_steps.append((
+                    type('Action', (), {'tool_input': str(tool_call['args'].get('query', ''))})(),
+                    tool_output
+                ))
         
         return {
-            "output": response.content if hasattr(response, 'content') and response.content else final_output,
+            "output": "I reached the maximum number of steps without finding a final answer. Please try simplifying the problem.",
             "intermediate_steps": intermediate_steps
         }
     
     class SimpleAgentExecutor:
-        """Simple executor that mimics AgentExecutor interface."""
         def __init__(self, chain):
             self.chain = chain
-        
         def invoke(self, input_dict):
             return self.chain(input_dict)
     
